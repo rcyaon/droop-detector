@@ -1,42 +1,98 @@
 ![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
 
-# Tiny Tapeout Verilog Project Template
+# droop-detector
 
-- [Read the documentation for project](docs/info.md)
+all-digital supply droop detector on the tt sky26c shuttle. 1x1 tile, no
+analog pins.
 
-## What is Tiny Tapeout?
+## how it works
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+a ring oscillator's frequency is a strong function of its local supply:
+gate delay scales roughly with $C_L V_{DD} / I_D$, and $I_D$ collapses as
+$(V_{DD}-V_{th})$ shrinks, so a few percent of droop shows up as a few
+percent of frequency shift.[^1] the tile carries three pieces:
 
-To learn more and get started, visit https://tinytapeout.com.
+- **sensor**: a nand-enabled ring of 25 `dlygate4sd3` cells feeding a
+  10-stage async ripple divider. one tapped bit (÷16 … ÷1024) crosses
+  into the system clock domain through a 2ff synchronizer; nothing
+  multi-bit ever crosses.
+- **aggressor**: 128 flops toggling on the same clk edge, in continuous /
+  single-burst / periodic-burst modes. every toggle pulls a synchronized
+  slug of dynamic current through the tile's rail: a controlled,
+  repeatable di/dt event.[^2]
+- **measurement**: period mode counts clk cycles per divided-RO period
+  (fast sampling: droop ⇒ RO slows ⇒ count **rises**). frequency mode
+  counts divided-RO edges in an 8192-clk window (slow, high resolution,
+  for the static transfer curve).
 
-## Set up your Verilog project
+what this measures: the *envelope* of the supply excursion at
+µs-ish timescales set by the divided-RO sample rate (package/board-level
+sag against the decoupling network) not the ns-scale instantaneous
+notch. same tradeoff as sampling droop through a scope with limited
+bandwidth, except the probe is the victim circuit itself.
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+## bring-up plan
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+1. **baseline**: RO off vs on, log divided-RO frequency per tap on
+   `uio[5]` with a scope or counter.
+2. **static calibration (frequency mode)**: power the breakout from a
+   bench supply, sweep VDD, record sample vs voltage. this is the
+   sensor's transfer curve; everything after is read through it.
+3. **droop (period mode)**: arm periodic bursts, trigger the scope on
+   `uio[4]` (aggressor active), capture the sample stream on `uo[7:0]`
+   with a logic analyzer clocked by `uio[3]` (valid). overlay burst
+   length sweeps.
+4. **cross-platform**: same RTL on the tang nano 20k (`fpga/`). LUT
+   delays are also VDD-dependent, so the architecture demos end-to-end
+   before silicon arrives; absolute numbers will differ, which is the
+   point of having both.
 
-## Enable GitHub actions to build the results page
+## fpga (tang nano 20k)
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+synthesize `fpga/tangnano20k_top.v` + `src/*` in the gowin ide with the
+`FPGA` define. S1 fires a burst, S2 held = calibration mode, LEDs show
+the sample, and every valid sample streams out the usb-uart at 115200
+(decimated when the uart is busy). **verify the .cst pin numbers against
+the sipeed schematic before building**: they're from the common
+examples, not gospel.
 
-## Resources
+## hardening notes (read before submitting)
 
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
+- the sky130 cells in `src/ro_osc.v` are instantiated directly and marked
+  `(* keep *)`; yosys treats them as blackboxes and links them at
+  techmap. this is the established tt pattern for hardware oscillators,
+  but diff your synthesis stats and confirm the nand + 25 dlygates
+  survived.
+- the ripple divider clocks flops from other flops' outputs: expect
+  generated-clock / unconstrained warnings from sta. they're benign
+  here (edges only, single-bit cdc), but eyeball the log so you know
+  which warnings are yours.
+- cocotb needs `-DSIM` (set in `test/Makefile`); the tapeout build needs
+  *no* defines; the fpga build needs `FPGA`.
+- if the tile is congested, drop the aggressor to `WIDTH=96`: it only
+  changes the size of the hammer.
 
-## What next?
+## pinout
 
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+| pin | dir | function |
+|---|---|---|
+| `ui[1:0]` | in | aggressor mode: off / continuous / triggered / periodic |
+| `ui[2]` | in | aggressor trigger (rising edge) |
+| `ui[5:3]` | in | burst length = 16 << sel clk cycles |
+| `ui[6]` | in | 0 period mode / 1 frequency mode |
+| `ui[7]` | in | RO enable |
+| `uo[7:0]` | out | sample byte |
+| `uio[1:0]` | in | divider tap: /16, /64, /256, /1024 |
+| `uio[3]` | out | sample valid strobe |
+| `uio[4]` | out | aggressor active |
+| `uio[5]` | out | divided RO (scope this) |
+| `uio[6]` | out | saturation flag |
+| `uio[7]` | out | heartbeat ⊕ aggressor parity |
+
+## footnotes
+
+[^1]: sakurai & newton — "alpha-power law MOSFET model and its
+    applications to CMOS inverter delay," IEEE JSSC, 1990
+
+[^2]: larsson — "di/dt noise in CMOS integrated circuits," analog
+    integrated circuits and signal processing, 1997

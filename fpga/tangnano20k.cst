@@ -1,0 +1,30 @@
+// tang nano 20k constraints (GW2AR-LV18QN88C8/I7)
+//
+// !! pin numbers below are from the common sipeed examples -- verify
+// !! against the tang nano 20k schematic before building, especially
+// !! the uart pins (they route to the onboard BL616 usb-serial).
+
+IO_LOC "sys_clk" 4;
+IO_PORT "sys_clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+IO_LOC "s1" 88;
+IO_PORT "s1" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_LOC "s2" 87;
+IO_PORT "s2" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+
+IO_LOC "led[0]" 15;
+IO_LOC "led[1]" 16;
+IO_LOC "led[2]" 17;
+IO_LOC "led[3]" 18;
+IO_LOC "led[4]" 19;
+IO_LOC "led[5]" 20;
+IO_PORT "led[0]" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "led[1]" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "led[2]" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "led[3]" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "led[4]" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "led[5]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// uart tx into the BL616 (shows up as the second usb-serial port)
+IO_LOC "uart_txp" 69;
+IO_PORT "uart_txp" IO_TYPE=LVCMOS33 PULL_MODE=UP;
