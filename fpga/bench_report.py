@@ -47,7 +47,7 @@ head("AREA — per-block breakdown (standalone synthesis)")
 TOPS = [("tangnano20k_top","FPGA top: tile + LEDs + UART"),
         ("tt_um_rcyaon_droop","TT tile (this is what tapes out)"),
         ("droop_sensor","divider + period/freq counters"),
-        ("aggressor","128-flop switching load"),
+        ("aggressor","64-flop switching load"),
         ("ro_osc","25-stage LUT1 ring + enable"),
         ("uart_tx","8N1 serialiser (FPGA only)")]
 def blk(top):

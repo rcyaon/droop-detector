@@ -76,7 +76,7 @@ module tt_um_rcyaon_droop (
   wire agg_active, agg_parity;
 
   aggressor #(
-      .WIDTH(128)
+      .WIDTH(64)
   ) u_agg (
       .clk    (clk),
       .rst_n  (rst_n),

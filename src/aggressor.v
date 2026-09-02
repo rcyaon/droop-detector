@@ -17,12 +17,22 @@
 //
 // burst_len = 16 << len_sel  ->  16 .. 2048 clk cycles.
 //
-// the xor-reduced parity output gives the bank real observable fanout so
-// no tool in the flow can argue the flops are dead logic. it gets folded
-// into the heartbeat pin at top level where it changes nothing visible.
+// WIDTH is an area/droop tradeoff, not a free knob. every bank flop is a
+// toggle flop plus its own next-state mux, so the bank costs ~21 um^2 per
+// bit in sky130 hd. at WIDTH=128 the tile synthesized to 12874 um^2 in a
+// 16493 um^2 core (82.65% util) and hardening died in detailed placement:
+// openroad inserted 188 hold buffers after CTS and had nowhere to put
+// them (DPL-0036). WIDTH=64 is what fits a 1x1 tile with room for CTS.
+//
+// the parity output exists to give the bank a path to a primary output.
+// without one, each bank bit is a self-contained toggle loop that reaches
+// nothing, and yosys opt_clean sweeps the lot. it is deliberately only an
+// 8-bit reduction: a full ^bank is a WIDTH-1 gate xor tree (127 gates at
+// WIDTH=128, ~2060 um^2, 16% of the whole design) bought nothing that
+// (* keep *) does not already do. the remaining bits are held by (* keep *).
 
 module aggressor #(
-    parameter WIDTH = 128
+    parameter WIDTH = 64
 ) (
     input  wire       clk,
     input  wire       rst_n,
@@ -33,7 +43,7 @@ module aggressor #(
     output wire       parity
 );
 
-  (* keep *) reg [WIDTH-1:0] bank;
+  (* keep = "true" *) reg [WIDTH-1:0] bank;
   initial bank = {WIDTH{1'b0}};
 
   reg  [2:0]  trig_sync;
@@ -79,6 +89,7 @@ module aggressor #(
     if (active) bank <= ~bank;
   end
 
-  assign parity = ^bank;
+  // 7 gates, not WIDTH-1. see the header note.
+  assign parity = ^bank[7:0];
 
 endmodule
