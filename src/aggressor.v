@@ -85,8 +85,14 @@ module aggressor #(
     end
   end
 
-  always @(posedge clk) begin
-    if (active) bank <= ~bank;
+  // reset the bank even though its value is meaningless (it is a current
+  // load, not state). without it the flops are X out of reset in
+  // gate-level sim, parity carries that X to uio_out[7], and a pin that
+  // is X forever is both a bad waveform and a bad habit. costs ~5 um^2
+  // per bit for dfrtp over dfxtp.
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n)      bank <= {WIDTH{1'b0}};
+    else if (active) bank <= ~bank;
   end
 
   // 7 gates, not WIDTH-1. see the header note.

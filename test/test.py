@@ -22,7 +22,16 @@ TRIG = 1 << 2
 
 
 def bit(sig, n):
-    return (sig.value.to_unsigned() >> n) & 1
+    # read one bit, never the whole bus. in gate-level sim `ro_div`
+    # (uio_out[5]) is legitimately X forever: it is clocked by a real
+    # combinational ring, and a ring that starts at X stays at X in an
+    # event simulator -- nand2(x,1) is x, and so is every dlygate after
+    # it. converting the whole bus to an int would let that one bit fail
+    # every read of every other bit.
+    s = str(sig.value)  # MSB-first, one char per bit
+    c = s[len(s) - 1 - n]
+    assert c in "01", f"{sig._name}[{n}] is '{c}', expected 0 or 1"
+    return int(c)
 
 
 async def wait_valid(dut, timeout_cycles=200_000):
