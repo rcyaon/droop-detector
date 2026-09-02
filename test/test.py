@@ -22,19 +22,19 @@ TRIG = 1 << 2
 
 
 def bit(sig, n):
-    return (sig.value.integer >> n) & 1
+    return (sig.value.to_unsigned() >> n) & 1
 
 
 async def wait_valid(dut, timeout_cycles=200_000):
     for _ in range(timeout_cycles):
         await RisingEdge(dut.clk)
         if bit(dut.uio_out, VALID):
-            return dut.uo_out.value.integer
+            return dut.uo_out.value.to_unsigned()
     raise AssertionError("no valid strobe seen")
 
 
 async def setup(dut):
-    cocotb.start_soon(Clock(dut.clk, 20, units="ns").start())  # 50 MHz
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())  # 50 MHz
     dut.ena.value = 1
     dut.ui_in.value = RO_EN  # oscillator on, aggressor off, period mode
     dut.uio_in.value = 0     # tap /16

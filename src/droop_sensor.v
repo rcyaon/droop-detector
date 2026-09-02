@@ -19,15 +19,27 @@ module droop_sensor (
   // absolute value is irrelevant (we only look at edges), so no reset.
   // `initial` keeps sim/fpga defined; asic synthesis ignores it and the
   // silicon settles wherever it likes on powerup.
-  reg [9:0] div;
-  initial div = 10'd0;
+  //
+  // each stage is its own 1-bit flop, collected into `div` by continuous
+  // assign, rather than ten always blocks writing bits of one shared
+  // `reg [9:0]`. every bit had exactly one driver either way, but
+  // the linter judges multi-driver per signal rather than per bit, so the
+  // shared vector came back MULTIDRIVEN: a fatal lint error in the tt
+  // hardening flow, not just a warning.
+  wire [9:0] div;
 
-  always @(posedge ro_out) div[0] <= ~div[0];
+  reg div0;
+  initial div0 = 1'b0;
+  always @(posedge ro_out) div0 <= ~div0;
+  assign div[0] = div0;
 
   genvar i;
   generate
     for (i = 1; i < 10; i = i + 1) begin : g_div
-      always @(posedge div[i-1]) div[i] <= ~div[i];
+      reg q;
+      initial q = 1'b0;
+      always @(posedge div[i-1]) q <= ~q;
+      assign div[i] = q;
     end
   endgenerate
 

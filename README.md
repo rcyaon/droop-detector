@@ -31,46 +31,62 @@ sag against the decoupling network) not the ns-scale instantaneous
 notch. same tradeoff as sampling droop through a scope with limited
 bandwidth, except the probe is the victim circuit itself.
 
-## bring-up plan
+## fpga bench (area + delay)
 
-1. **baseline**: RO off vs on, log divided-RO frequency per tap on
-   `uio[5]` with a scope or counter.
-2. **static calibration (frequency mode)**: power the breakout from a
-   bench supply, sweep VDD, record sample vs voltage. this is the
-   sensor's transfer curve; everything after is read through it.
-3. **droop (period mode)**: arm periodic bursts, trigger the scope on
-   `uio[4]` (aggressor active), capture the sample stream on `uo[7:0]`
-   with a logic analyzer clocked by `uio[3]` (valid). overlay burst
-   length sweeps.
-4. **cross-platform**: same RTL on the tang nano 20k (`fpga/`). LUT
-   delays are also VDD-dependent, so the architecture demos end-to-end
-   before silicon arrives; absolute numbers will differ, which is the
-   point of having both.
+`./fpga/bench.sh` runs the whole open-source gowin flow and prints a
+resource/timing report
 
-## fpga (tang nano 20k)
+```
+OSS_CAD_SUITE=/path/to/oss-cad-suite ./fpga/bench.sh
+```
 
-synthesize `fpga/tangnano20k_top.v` + `src/*` in the gowin ide with the
-`FPGA` define. S1 fires a burst, S2 held = calibration mode, LEDs show
-the sample, and every valid sample streams out the usb-uart at 115200
-(decimated when the uart is busy). **verify the .cst pin numbers against
-the sipeed schematic before building**: they're from the common
-examples, not gospel.
+post-place-and-route on the GW2AR-LV18QN88C8/I7:
 
-## hardening notes (read before submitting)
+| resource | used | avail | util |
+|---|---|---|---|
+| LUT4 | 578 | 20736 | 2.79% |
+| DFF | 249 | 15552 | 1.60% |
+| ALU | 106 | 15552 | 0.68% |
+| MUX2_LUT5…8 | 179 | — | <1% |
+| IOB | 10 | 384 | 2.60% |
+| BUFG | 1 | 24 | 4.17% |
 
-- the sky130 cells in `src/ro_osc.v` are instantiated directly and marked
-  `(* keep *)`; yosys treats them as blackboxes and links them at
-  techmap. this is the established tt pattern for hardware oscillators,
-  but diff your synthesis stats and confirm the nand + 25 dlygates
-  survived.
-- the ripple divider clocks flops from other flops' outputs: expect
-  generated-clock / unconstrained warnings from sta. they're benign
-  here (edges only, single-bit cdc), but eyeball the log so you know
-  which warnings are yours.
-- cocotb needs `-DSIM` (set in `test/Makefile`); the tapeout build needs
-  *no* defines; the fpga build needs `FPGA`.
-- if the tile is congested, drop the aggressor to `WIDTH=96`: it only
-  changes the size of the hammer.
+timing closes with room to spare: **285.80 MHz** against the 27 MHz
+crystal, a 3.50 ns critical path (1.91 ns logic / 1.59 ns routing) in a
+37.04 ns budget. the path is the saturating period counter at
+`src/droop_sensor.v:64`, where the `== 14'h3fff` compare and the
+increment share a carry chain. quote the number printed *after* routing:
+the post-placement estimate was 206.61 MHz, 28% pessimistic.
+
+three things the bench checks that matter more than the numbers:
+
+- **the ring survives.** walking the netlist from `g_dly[24]` back
+  through each input returns to the start after 26 cells: 25 buffers
+  (`INIT=10`) + 1 inverter (`INIT=01`). the enable folds into that
+  inverter because `ui_in[7]` is tied high here, so the fpga build can't
+  park the oscillator.
+- **nothing multi-bit crosses.** nextpnr finds 7 clock domains on its
+  own and reports "no interior paths" for every RO-derived one: each
+  divider stage is a lone toggle flop. exactly one path crosses into
+  `clk`, 0.27 ns, landing on the 2ff synchronizer.
+- **all 10 `IO_LOC` entries lock** to legal sites with their IO_TYPE and
+  PULL_MODE applied. that is legality for the package, not agreement
+  with the sipeed schematic; still verify before you flash.
+
+only 6 of the 10 divider stages exist in the fpga image: `TAP_SEL` is a
+localparam here, so the tap mux folds to `div[5]` and stages 6-9 are
+dead-code eliminated. on the asic the tap arrives on `uio_in[1:0]` and
+all 10 stay, which is why the tile alone synthesizes *larger* (731
+LUT-eq) than the whole board design containing it (562). the gap between
+those two is what runtime tap selection costs.
+
+a ring oscillator has no start or end flop, so sta has no path to analyze and
+treats `ro_out` as a clock of unknown rate. RO frequency is physical and
+only shows up on hardware, which is what step 1 of the bring-up plan is
+for. the delay model is also nextpnr's own, single corner, not vendor
+sign-off. and area is toolchain-dependent: yosys 0.64 reports 380 LUT-eq
+where 0.68 reports 562, purely from wide-mux mapping, so pin the version
+alongside any number you quote.
 
 ## pinout
 
