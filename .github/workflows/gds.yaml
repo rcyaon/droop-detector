@@ -28,6 +28,12 @@ jobs:
   gl_test:
     needs: gds
     runs-on: ubuntu-24.04
+    # the whole gl run is ~19k clk cycles and finishes in minutes. a cap
+    # here is the only thing that catches a wedged simulation: a design
+    # with a combinational loop in it stops advancing simulation time, so
+    # no cocotb timeout can fire and the job would otherwise sit on a
+    # runner for the full 6 h limit.
+    timeout-minutes: 30
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
