@@ -42,7 +42,7 @@ pinout:
   # Bidirectional pins
   uio[0]: "TAP_SEL0"
   uio[1]: "TAP_SEL1"
-  uio[2]: ""
+  uio[2]: "ST_SEL"
   uio[3]: "VALID"
   uio[4]: "AGG_ACTIVE"
   uio[5]: "RO_DIV"

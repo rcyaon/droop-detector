@@ -3,31 +3,21 @@
 
 `default_nettype none
 
-// all-digital supply-droop detector, ttsky26c, 1x1 tile.
-//
-// an RO whose frequency tracks the tile's local VDD, an on-tile
-// simultaneous-switching aggressor to yank the rail on demand, and a
-// small measurement core that reports either the RO period (fast
-// sampling, watch the droop) or the RO frequency over a fixed window
-// (slow, calibrate the sensor).
+// all-digital supply-droop detector, ttsky26c, 1x1 tile. an RO tracks
+// local VDD, an aggressor yanks the rail on demand, and the measurement
+// core reports RO period (fast) or frequency (calibration). see README.
 //
 // pinout ------------------------------------------------------------
-//  ui_in[1:0]  aggressor mode      00 off / 01 cont / 10 trig / 11 auto
-//  ui_in[2]    aggressor trigger   (rising edge, mode 10)
-//  ui_in[5:3]  burst length        16 << sel clk cycles (16..2048)
-//  ui_in[6]    measurement mode    0 period (fast) / 1 frequency (cal)
-//  ui_in[7]    RO enable           0 parks the oscillator
-//
-//  uio_in[1:0] divider tap         00 /16, 01 /64, 10 /256, 11 /1024
-//  uio_in[2]   (reserved input)
-//
+//  ui_in[1:0]  aggressor mode: 00 off / 01 cont / 10 trig / 11 auto
+//  ui_in[2]    aggressor trigger (rising edge)
+//  ui_in[5:3]  burst length, 16 << sel clk cycles
+//  ui_in[6]    0 period mode / 1 frequency mode
+//  ui_in[7]    RO enable (0 parks it)
+//  uio_in[1:0] divider tap: /16 /64 /256 /1024
+//  uio_in[2]   measure the clk/2 self-test source instead of the RO
 //  uo_out[7:0] sample byte
-//
-//  uio_out[3]  sample valid strobe
-//  uio_out[4]  aggressor active
-//  uio_out[5]  ro_div  <- divided RO straight to a pin: put a scope on it
-//  uio_out[6]  saturation flag (sample pinned at 0xff, pick a lower tap)
-//  uio_out[7]  heartbeat (~6 Hz at 50 MHz) xor aggressor parity
+//  uio_out[3]  valid    [4] agg active    [5] divided RO (scope this)
+//  uio_out[6]  sat      [7] heartbeat ^ parity of bank[7:0]
 
 module tt_um_rcyaon_droop (
     input  wire [7:0] ui_in,
@@ -47,6 +37,7 @@ module tt_um_rcyaon_droop (
   wire       meas_mode = ui_in[6];
   wire       ro_en     = ui_in[7];
   wire [1:0] tap_sel   = uio_in[1:0];
+  wire       st_sel    = uio_in[2];
 
   // ---- sensor ----------------------------------------------------------
   wire ro_out, ro_div;
@@ -60,10 +51,27 @@ module tt_um_rcyaon_droop (
       .ro_out(ro_out)
   );
 
+  // the measured source is the ring, or a clk/2 square wave when
+  // st_sel is set. that self-test path earns its ~10 um^2 twice over:
+  // on silicon it exercises the whole divider/counter chain against a
+  // known frequency without trusting the ring, and in gate-level sim it
+  // is the only way the measurement path can run at all. under the
+  // sky130 FUNCTIONAL models every combinational cell is zero-delay, so
+  // the hardened ring is a zero-delay loop: release its enable and the
+  // event simulator spins at one timestamp forever. GL therefore leaves
+  // the ring parked and measures st_clk, whose counts are exact.
+  reg st_clk;
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) st_clk <= 1'b0;
+    else        st_clk <= ~st_clk;
+  end
+
+  wire ro_meas = st_sel ? st_clk : ro_out;
+
   droop_sensor u_sense (
       .clk      (clk),
       .rst_n    (rst_n),
-      .ro_out   (ro_out),
+      .ro_out   (ro_meas),
       .tap_sel  (tap_sel),
       .meas_mode(meas_mode),
       .sample   (sample),
@@ -99,7 +107,7 @@ module tt_um_rcyaon_droop (
 
   assign uio_oe  = 8'b1111_1000;  // [2:0] inputs, [7:3] outputs
   assign uio_out = {
-      hb[22] ^ agg_parity,  // [7] heartbeat (parity xor keeps bank alive)
+      hb[22] ^ agg_parity,  // [7] the xor is what keeps the bank alive
       sat,                  // [6]
       ro_div,               // [5]
       agg_active,           // [4]
@@ -108,6 +116,6 @@ module tt_um_rcyaon_droop (
   };
 
   // avoid unused warnings
-  wire _unused = &{ena, uio_in[7:2], 1'b0};
+  wire _unused = &{ena, uio_in[7:3], 1'b0};
 
 endmodule

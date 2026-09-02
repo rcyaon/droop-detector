@@ -16,24 +16,13 @@ module droop_sensor (
 );
 
   // ---- async ripple divider (RO domain) --------------------------------
-  // the absolute count is irrelevant (we only look at edges) but the
-  // divider is still reset. `initial` covers sim and fpga; asic synthesis
-  // ignores it, and without a real reset every stage is X out of powerup
-  // in gate-level sim. ~X is X, so a toggle flop that starts X never
-  // leaves it: the X reaches ro_div, through the synchronizer, into tick,
-  // and pins `valid` at X forever. that costs ~5 um^2 per stage and makes
-  // the whole measurement path simulatable on the hardened netlist.
+  // only edges matter, but every stage still gets a real reset: without
+  // one they power up X in gate-level sim, and ~X stays X, pinning valid
+  // at X forever. async release is harmless -- the divider's phase means
+  // nothing and its output crosses into clk through the 2ff sync below.
   //
-  // reset is released asynchronously with respect to ro_out, which is
-  // fine here: the divider is free-running, its phase carries no meaning,
-  // and anything it feeds crosses into clk through the 2ff synchronizer.
-  //
-  // each stage is its own 1-bit flop, collected into `div` by continuous
-  // assign, rather than ten always blocks writing bits of one shared
-  // `reg [9:0]`. every bit had exactly one driver either way, but
-  // the linter judges multi-driver per signal rather than per bit, so the
-  // shared vector came back MULTIDRIVEN: a fatal lint error in the tt
-  // hardening flow, not just a warning.
+  // one 1-bit flop per stage gathered by assign, not a shared reg [9:0]:
+  // the linter calls that MULTIDRIVEN, which is fatal in the tt flow.
   wire [9:0] div;
 
   reg div0;

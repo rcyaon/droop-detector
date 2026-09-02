@@ -6,23 +6,16 @@
 `timescale 1ns / 1ps
 `endif
 
-// supply-sensing ring oscillator with enable gate.
+// supply-sensing ring oscillator with enable gate. three builds:
+//   SIM    - behavioral fixed-period model; a real loop won't oscillate
+//            in rtl sim, and the tests only exercise the counters.
+//   FPGA   - gowin LUT1 buffer chain (LUT delay tracks VDD too).
+//   (none) - sky130 tapeout: nand2 is the loop's one inversion and its
+//            switch; dlygate4sd3 cells keep it out of the GHz.
 //
-// three implementations, selected by define:
-//   SIM    - behavioral fixed-period model (cocotb / iverilog). the RTL sim
-//            can't oscillate a real loop, so this stands in for it. the
-//            frequency is arbitrary; tests only exercise the counters.
-//   FPGA   - gowin LUT1 buffer chain with syn_keep (tang nano 20k). LUT
-//            delay is VDD/temp dependent, so the sensor genuinely works
-//            on the fpga too, just with different absolute numbers.
-//   (none) - sky130 tapeout path: nand2 closes the loop (the single
-//            inversion), dlygate4sd3 cells slow it down so the ripple
-//            divider's first flop isn't asked to toggle at multi-GHz.
-//
-// loop topology (silicon):  nand2 -> dly[0] -> ... -> dly[STAGES-1] -+
-//                             ^A                                     |
-//                             +-------------------------------------+
-//                             ^B = en   (en=0 parks the loop)
+// loop:  nand2 -> dly[0] -> ... -> dly[STAGES-1] -+
+//          ^B = en (0 parks it)                   |
+//          ^A <------------------------------------+
 
 module ro_osc #(
     parameter STAGES      = 25,  // non-inverting delay stages
@@ -43,9 +36,8 @@ module ro_osc #(
 
 `elsif FPGA
 
-  // gowin LUT1 with INIT=2'b10 is a plain buffer (F = I0). instantiating
-  // primitives (rather than assigns) keeps the synthesizer from collapsing
-  // the loop even before syn_keep is considered.
+  // LUT1 INIT=2'b10 is a plain buffer; instantiating primitives rather
+  // than assigns keeps the tool from collapsing the loop.
   (* syn_keep = "true", keep = "true" *) wire [STAGES:0] n;
 
   assign n[0] = ~(n[STAGES] & en);  // maps to a LUT2, closes the loop
@@ -65,9 +57,8 @@ module ro_osc #(
 
 `else
 
-  // sky130 tapeout path. cells are blackboxes to yosys and get linked
-  // against the liberty at techmap, so the loop survives synthesis.
-  // (* keep *) prevents sweep of the "unused" combinational cycle.
+  // cells are blackboxes to yosys until techmap, so the loop survives
+  // synthesis; (* keep *) stops the sweep of an "unused" cycle.
   wire [STAGES:0] n;
 
   (* keep *) sky130_fd_sc_hd__nand2_1 u_nand (

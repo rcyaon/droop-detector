@@ -3,33 +3,15 @@
 
 `default_nettype none
 
-// simultaneous-switching aggressor: WIDTH flops all toggling on the same
-// clk edge. every toggle draws a synchronized slug of dynamic current
-// from the tile's rail, which is what actually produces the droop the
-// sensor watches.
+// simultaneous-switching aggressor: WIDTH flops toggling on one clk
+// edge, each toggle pulling a slug of current off the tile's rail.
 //
-// modes:
-//   00  off
-//   01  continuous  (dc-ish load: rail settles to a new lower operating point)
-//   10  one burst of burst_len cycles per trigger rising edge
-//   11  periodic bursts, one every 32768 clk cycles (free-running,
-//       handy when you want a repeating event to trigger a scope on)
+// modes: 00 off, 01 continuous, 10 one burst per trigger edge,
+//        11 a burst every 32768 clk.  burst_len = 16 << len_sel.
 //
-// burst_len = 16 << len_sel  ->  16 .. 2048 clk cycles.
-//
-// WIDTH is an area/droop tradeoff, not a free knob. every bank flop is a
-// toggle flop plus its own next-state mux, so the bank costs ~21 um^2 per
-// bit in sky130 hd. at WIDTH=128 the tile synthesized to 12874 um^2 in a
-// 16493 um^2 core (82.65% util) and hardening died in detailed placement:
-// openroad inserted 188 hold buffers after CTS and had nowhere to put
-// them (DPL-0036). WIDTH=64 is what fits a 1x1 tile with room for CTS.
-//
-// the parity output exists to give the bank a path to a primary output.
-// without one, each bank bit is a self-contained toggle loop that reaches
-// nothing, and yosys opt_clean sweeps the lot. it is deliberately only an
-// 8-bit reduction: a full ^bank is a WIDTH-1 gate xor tree (127 gates at
-// WIDTH=128, ~2060 um^2, 16% of the whole design) bought nothing that
-// (* keep *) does not already do. the remaining bits are held by (* keep *).
+// WIDTH=64 and the 8-bit parity are area limits, not preferences: 128
+// flops blew detailed placement on a 1x1 tile, and a full ^bank is a
+// 127-gate tree. 
 
 module aggressor #(
     parameter WIDTH = 64
@@ -85,17 +67,14 @@ module aggressor #(
     end
   end
 
-  // reset the bank even though its value is meaningless (it is a current
-  // load, not state). without it the flops are X out of reset in
-  // gate-level sim, parity carries that X to uio_out[7], and a pin that
-  // is X forever is both a bad waveform and a bad habit. costs ~5 um^2
-  // per bit for dfrtp over dfxtp.
+  // the value means nothing (current load, not state); reset only so the
+  // bank isn't X forever in gate-level sim. 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n)      bank <= {WIDTH{1'b0}};
     else if (active) bank <= ~bank;
   end
 
-  // 7 gates, not WIDTH-1. see the header note.
+  // 7 gates, not WIDTH-1: just enough to keep opt_clean off the bank.
   assign parity = ^bank[7:0];
 
 endmodule

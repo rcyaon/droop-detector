@@ -3,21 +3,14 @@
 
 `default_nettype none
 
-// tang nano 20k wrapper around the tt module. synthesize with -DFPGA so
-// ro_osc uses the gowin LUT1 chain.
+// tang nano 20k wrapper. synthesize with -DFPGA so ro_osc uses the gowin
+// LUT1 chain. 27 MHz crystal drives clk (only the period counts scale),
+// S1 triggers the aggressor, S2 selects frequency mode, LEDs show
+// sample[7:2]. samples arriving while the uart is busy are dropped --
+// decimation, so a slow uart never stalls the sensor.
 //
-//   - 27 MHz onboard crystal drives clk directly (the design doesn't
-//     care about absolute clk frequency; your period counts just scale)
-//   - S1 fires the aggressor trigger
-//   - S2 held at boot = frequency/cal mode, otherwise period mode
-//   - LEDs show sample[7:2] (active low on this board)
-//   - every valid sample is offered to the uart; if the uart is still
-//     busy the sample is dropped (decimation, not backpressure), so the
-//     stream is a subsample but never stalls the sensor
-//
-// stream it with e.g.:
-//   python3 -c "import serial;s=serial.Serial('/dev/ttyUSB1',115200)
-//   [print(s.read()[0]) for _ in iter(int,1)]"
+// read it with: python3 -c "import serial;s=serial.Serial(
+//   '/dev/ttyUSB1',115200);[print(s.read()[0]) for _ in iter(int,1)]"
 
 module tangnano20k_top (
     input  wire       sys_clk,   // 27 MHz

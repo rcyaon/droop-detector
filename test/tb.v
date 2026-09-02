@@ -4,9 +4,8 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// cocotb wrapper, tt template style. build with -DSIM so ro_osc swaps in
-// its behavioral model (a real combinational loop won't oscillate in rtl
-// sim). the makefile passes -DSIM for both the rtl and gate-level runs.
+// cocotb wrapper, tt template style. -DSIM swaps in ro_osc's behavioral
+// model, since a real combinational loop won't oscillate in rtl sim.
 
 module tb ();
 
