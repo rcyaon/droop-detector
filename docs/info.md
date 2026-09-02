@@ -18,7 +18,7 @@ up as a few percent of frequency shift. The tile carries three pieces:
   `dlygate4sd3` cells feeding a 10-stage async ripple divider. One tapped bit
   (÷16 … ÷1024) crosses into the system clock domain through a 2ff
   synchronizer; nothing multi-bit ever crosses.
-- **Aggressor** (`aggressor.v`): 128 flops toggling on the same clock edge, in
+- **Aggressor** (`aggressor.v`): 64 flops toggling on the same clock edge, in
   continuous / single-burst / periodic-burst modes. Every toggle pulls a
   synchronized slug of dynamic current through the tile's rail: a controlled,
   repeatable di/dt event.
