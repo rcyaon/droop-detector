@@ -33,14 +33,17 @@ bandwidth, except the probe is the victim circuit itself.
 
 ## fpga bench (area + delay)
 
-`./fpga/bench.sh` runs the whole open-source gowin flow and prints a
-resource/timing report
+`./fpga/bench.sh` builds the design for the tang nano 20k with the
+open-source gowin flow and prints how much of the fpga it uses and how
+fast it can run.
 
 ```
 OSS_CAD_SUITE=/path/to/oss-cad-suite ./fpga/bench.sh
 ```
 
-post-place-and-route on the GW2AR-LV18QN88C8/I7:
+### how much fits
+
+after place-and-route on the GW2AR-LV18QN88C8/I7:
 
 | resource | used | avail | util |
 |---|---|---|---|
@@ -51,42 +54,46 @@ post-place-and-route on the GW2AR-LV18QN88C8/I7:
 | IOB | 10 | 384 | 2.60% |
 | BUFG | 1 | 24 | 4.17% |
 
-timing closes with room to spare: **285.80 MHz** against the 27 MHz
-crystal, a 3.50 ns critical path (1.91 ns logic / 1.59 ns routing) in a
-37.04 ns budget. the path is the saturating period counter at
-`src/droop_sensor.v:64`, where the `== 14'h3fff` compare and the
-increment share a carry chain. quote the number printed *after* routing:
-the post-placement estimate was 206.61 MHz, 28% pessimistic.
+### how fast
 
-three things the bench checks that matter more than the numbers:
+**285.80 MHz**, against a 27 MHz crystal, so there is a lot of margin.
+the slowest path takes 3.50 ns (1.91 ns in logic, 1.59 ns in routing)
+out of the 37.04 ns a 27 MHz clock gives you.
 
-- **the ring survives.** walking the netlist from `g_dly[24]` back
-  through each input returns to the start after 26 cells: 25 buffers
-  (`INIT=10`) + 1 inverter (`INIT=01`). the enable folds into that
-  inverter because `ui_in[7]` is tied high here, so the fpga build can't
-  park the oscillator.
-- **nothing multi-bit crosses.** nextpnr finds 7 clock domains on its
-  own and reports "no interior paths" for every RO-derived one: each
-  divider stage is a lone toggle flop. exactly one path crosses into
-  `clk`, 0.27 ns, landing on the 2ff synchronizer.
-- **all 10 `IO_LOC` entries lock** to legal sites with their IO_TYPE and
-  PULL_MODE applied. that is legality for the package, not agreement
-  with the sipeed schematic; still verify before you flash.
+that path is the saturating period counter at `src/droop_sensor.v:64`,
+where the `== 14'h3fff` compare and the increment share a carry chain.
 
-only 6 of the 10 divider stages exist in the fpga image: `TAP_SEL` is a
-localparam here, so the tap mux folds to `div[5]` and stages 6-9 are
-dead-code eliminated. on the asic the tap arrives on `uio_in[1:0]` and
-all 10 stay, which is why the tile alone synthesizes *larger* (731
-LUT-eq) than the whole board design containing it (562). the gap between
-those two is what runtime tap selection costs.
+quote the number printed *after* routing. the earlier post-placement
+estimate said 206.61 MHz, which is 28% too pessimistic.
 
-a ring oscillator has no start or end flop, so sta has no path to analyze and
-treats `ro_out` as a clock of unknown rate. RO frequency is physical and
-only shows up on hardware, which is what step 1 of the bring-up plan is
-for. the delay model is also nextpnr's own, single corner, not vendor
-sign-off. and area is toolchain-dependent: yosys 0.64 reports 380 LUT-eq
-where 0.68 reports 562, purely from wide-mux mapping, so pin the version
-alongside any number you quote.
+however, three sanity checks matter more than the numbers above:
+
+- **the ring is still a ring.** walking the netlist backwards from
+  `g_dly[24]` through each input returns to the start after 26 cells: 25
+  buffers (`INIT=10`) + 1 inverter (`INIT=01`). the enable gate folded
+  into that inverter because `ui_in[7]` is tied high here, so the fpga
+  build can't park the oscillator.
+- **nothing multi-bit crosses clock domains.** nextpnr finds 7 clock
+  domains on its own and reports "no interior paths" for every
+  RO-derived one, because each divider stage is a lone toggle flop.
+  exactly one path crosses into `clk` — 0.27 ns, landing on the 2ff
+  synchronizer.
+- **all 10 pins place.** every `IO_LOC` lands on a legal site with its
+  IO_TYPE and PULL_MODE applied. that is legality for the package, not
+  agreement with the sipeed schematic — verify that yourself before you
+  flash.
+
+### why the area numbers look inconsistent
+
+only 6 of the 10 divider stages exist in the fpga image. `TAP_SEL` is a
+localparam here, so the tap mux folds down to `div[5]` and stages 6-9
+are optimized away. on the asic the tap arrives on `uio_in[1:0]` and all
+10 stay. that is why the tile on its own synthesizes *larger* (731
+LUT-eq) than the whole board design that contains it (562) — the gap is
+what runtime tap selection costs.
+
+area also depends on the toolchain: yosys 0.64 reports 380 LUT-eq where
+0.68 reports 562, purely from how wide muxes get mapped. 
 
 ## pinout
 
