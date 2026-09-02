@@ -16,9 +16,17 @@ module droop_sensor (
 );
 
   // ---- async ripple divider (RO domain) --------------------------------
-  // absolute value is irrelevant (we only look at edges), so no reset.
-  // `initial` keeps sim/fpga defined; asic synthesis ignores it and the
-  // silicon settles wherever it likes on powerup.
+  // the absolute count is irrelevant (we only look at edges) but the
+  // divider is still reset. `initial` covers sim and fpga; asic synthesis
+  // ignores it, and without a real reset every stage is X out of powerup
+  // in gate-level sim. ~X is X, so a toggle flop that starts X never
+  // leaves it: the X reaches ro_div, through the synchronizer, into tick,
+  // and pins `valid` at X forever. that costs ~5 um^2 per stage and makes
+  // the whole measurement path simulatable on the hardened netlist.
+  //
+  // reset is released asynchronously with respect to ro_out, which is
+  // fine here: the divider is free-running, its phase carries no meaning,
+  // and anything it feeds crosses into clk through the 2ff synchronizer.
   //
   // each stage is its own 1-bit flop, collected into `div` by continuous
   // assign, rather than ten always blocks writing bits of one shared
@@ -30,7 +38,10 @@ module droop_sensor (
 
   reg div0;
   initial div0 = 1'b0;
-  always @(posedge ro_out) div0 <= ~div0;
+  always @(posedge ro_out or negedge rst_n) begin
+    if (!rst_n) div0 <= 1'b0;
+    else        div0 <= ~div0;
+  end
   assign div[0] = div0;
 
   genvar i;
@@ -38,7 +49,10 @@ module droop_sensor (
     for (i = 1; i < 10; i = i + 1) begin : g_div
       reg q;
       initial q = 1'b0;
-      always @(posedge div[i-1]) q <= ~q;
+      always @(posedge div[i-1] or negedge rst_n) begin
+        if (!rst_n) q <= 1'b0;
+        else        q <= ~q;
+      end
       assign div[i] = q;
     end
   endgenerate
