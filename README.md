@@ -209,8 +209,6 @@ resize, which deletes cells but does not touch this path.
 read the frequency printed *after* routing; the post-placement estimate
 runs about 28% pessimistic.
 
-## footnotes
-
 [^1]: sakurai & newton — "alpha-power law MOSFET model and its
     applications to CMOS inverter delay," IEEE JSSC, 1990
 
